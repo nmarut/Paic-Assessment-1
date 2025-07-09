@@ -18,6 +18,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 
+import com.paic.assessment.marut.entity.CdrLogsEntity;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -73,18 +74,36 @@ public class FileLoaderService {
 	            System.out.println("No CSV file found to process.");
 	            return;
 	        }
-	 
+			CdrLogsEntity logEntry = new CdrLogsEntity();
+			logEntry.setFileName(csvFile.getName());
+			logEntry.setUploadStartTime(LocalDateTime.now());
+			logEntry.setSuccessfulRecords(0);
+			logEntry.setFailedRecords(0);
+			logEntry = cdrLogsRepository.save(logEntry);
+
+			int successfulCount = 0;
+			int failedCount = 0;
+
 	        try {
 
-	        	processPipeSeparatedFile(csvFile);
+				successfulCount=processPipeSeparatedFile(csvFile);
 	        	
 	            moveFile(csvFile, PROCESSED_DIR);
 	            System.out.println("Processed and moved file: " + csvFile.getName());
 	        } catch (Exception e) {
+				failedCount++;
 	            e.printStackTrace();
 	            moveFile(csvFile, ERROR_DIR);
 	            System.err.println("Failed to process file. Moved to error: " + csvFile.getName());
 	        }
+
+			finally {
+
+				logEntry.setUploadEndTime(LocalDateTime.now());
+				logEntry.setSuccessfulRecords(successfulCount);
+				logEntry.setFailedRecords(failedCount);
+				cdrLogsRepository.save(logEntry);
+			}
 	    }
 	 
 
@@ -98,53 +117,58 @@ public class FileLoaderService {
 	            System.err.println("Error moving file: " + e.getMessage());
 	        }
 	    }
-	    
-	    
-	    private void processPipeSeparatedFile(File file) {
-	        final int CHUNK_SIZE = 1000;
-	        List<CallDetailsRecordEntity> chunk = new ArrayList<>(CHUNK_SIZE);
-	        List<Future<?>> futures = new ArrayList<>();
 
-	        try (BufferedReader br = new BufferedReader(new FileReader(file))) {
-	            String line;
 
-	            while ((line = br.readLine()) != null) {
-	                String[] tokens = line.split("\\|", -1);
-	                if (tokens.length < 31) {
-	                    log.warn("Skipping line, not enough tokens: {}", line);
-	                    continue;
-	                }
+	private int processPipeSeparatedFile(File file) {
+		final int CHUNK_SIZE = 500;
+		int totalRecords = 0;
+		List<CallDetailsRecordEntity> chunk = new ArrayList<>(CHUNK_SIZE);
+		List<Future<?>> futures = new ArrayList<>();
 
-	                try {
-	                    CallDetailsRecordEntity record = mapTokensToEntity(tokens);
-	                    chunk.add(record);
+		try (BufferedReader br = new BufferedReader(new FileReader(file))) {
+			String line;
 
-	                    if (chunk.size() >= CHUNK_SIZE) {
-	                        List<CallDetailsRecordEntity> batch = new ArrayList<>(chunk);
-	                        futures.add(executor.submit(() -> callDetailsRepository.saveAll(batch)));
-	                        chunk.clear();
-	                    }
-	                } catch (Exception e) {
-	                    log.warn("Skipping bad line: {} → {}", line, e.getMessage());
-	                }
-	            }
+			while ((line = br.readLine()) != null) {
+				String[] tokens = line.split("\\|", -1);
+				if (tokens.length < 31) {
+					log.warn("Skipping line, not enough tokens: {}", line);
+					continue;
+				}
 
-	            if (!chunk.isEmpty()) {
-	                List<CallDetailsRecordEntity> batch = new ArrayList<>(chunk);
-	                futures.add(executor.submit(() -> callDetailsRepository.saveAll(batch)));
-	            }
+				try {
+					CallDetailsRecordEntity record = mapTokensToEntity(tokens);
+					chunk.add(record);
 
-	            for (Future<?> f : futures) {
-	                f.get();
-	            }
+					if (chunk.size() >= CHUNK_SIZE) {
+						List<CallDetailsRecordEntity> batch = new ArrayList<>(chunk);
+						futures.add(executor.submit(() -> callDetailsRepository.saveAll(batch)));
+						totalRecords += batch.size();
+						chunk.clear();
+					}
+				} catch (Exception e) {
+					log.warn("Skipping bad line: {} → {}", line, e.getMessage());
+				}
+			}
 
-	        } catch (Exception e) {
-	            log.error("Failed to process file {}", file.getName(), e);
-	            throw new RuntimeException(e);
-	        }
-	    }
-	    
-	    private CallDetailsRecordEntity mapTokensToEntity(String[] tokens) {
+			if (!chunk.isEmpty()) {
+				List<CallDetailsRecordEntity> batch = new ArrayList<>(chunk);
+				futures.add(executor.submit(() -> callDetailsRepository.saveAll(batch)));
+				totalRecords += batch.size();
+			}
+
+			for (Future<?> f : futures) {
+				f.get();
+			}
+
+		} catch (Exception e) {
+			log.error("Failed to process file {}", file.getName(), e);
+			throw new RuntimeException(e);
+		}
+		return totalRecords; // ← CORRECT
+	}
+
+
+	private CallDetailsRecordEntity mapTokensToEntity(String[] tokens) {
 	        int idx = 0;
 	        CallDetailsRecordEntity record = new CallDetailsRecordEntity();
 	        record.setRecordDate(parseDateTime(tokens[idx++]));

@@ -1,9 +1,17 @@
 package com.paic.assessment.marut.entity;
 
 import jakarta.persistence.*;
+import lombok.AllArgsConstructor;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
 import java.time.LocalDateTime;
 
+
+@Data
 @Entity
+@NoArgsConstructor
+@AllArgsConstructor
 @Table(name = "cdr_logs")
 public class CdrLogsEntity {
 
@@ -27,53 +35,4 @@ public class CdrLogsEntity {
     @Column(name = "FailedRecords", nullable = false)
     private Integer failedRecords = 0;
 
-    // Getters and Setters
-
-    public Integer getId() {
-        return id;
-    }
-
-    public void setId(Integer id) {
-        this.id = id;
-    }
-
-    public String getFileName() {
-        return fileName;
-    }
-
-    public void setFileName(String fileName) {
-        this.fileName = fileName;
-    }
-
-    public LocalDateTime getUploadStartTime() {
-        return uploadStartTime;
-    }
-
-    public void setUploadStartTime(LocalDateTime uploadStartTime) {
-        this.uploadStartTime = uploadStartTime;
-    }
-
-    public LocalDateTime getUploadEndTime() {
-        return uploadEndTime;
-    }
-
-    public void setUploadEndTime(LocalDateTime uploadEndTime) {
-        this.uploadEndTime = uploadEndTime;
-    }
-
-    public Integer getSuccessfulRecords() {
-        return successfulRecords;
-    }
-
-    public void setSuccessfulRecords(Integer successfulRecords) {
-        this.successfulRecords = successfulRecords;
-    }
-
-    public Integer getFailedRecords() {
-        return failedRecords;
-    }
-
-    public void setFailedRecords(Integer failedRecords) {
-        this.failedRecords = failedRecords;
-    }
 }
