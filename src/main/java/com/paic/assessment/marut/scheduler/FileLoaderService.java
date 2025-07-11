@@ -69,7 +69,7 @@ public class FileLoaderService {
 	 	@Scheduled(fixedRate  = 60000)
 	    public void processSingleCsvFile() {
 	        File csvFile = fetchSingleCsvFile(INPUT_DIR);
-	 
+	 		log.info("Inside process single Csv file");
 	        if (csvFile == null) {
 	            System.out.println("No CSV file found to process.");
 	            return;
@@ -86,7 +86,7 @@ public class FileLoaderService {
 
 	        try {
 
-				successfulCount=processPipeSeparatedFile(csvFile);
+				successfulCount= processFile(csvFile);
 	        	
 	            moveFile(csvFile, PROCESSED_DIR);
 	            System.out.println("Processed and moved file: " + csvFile.getName());
@@ -109,6 +109,8 @@ public class FileLoaderService {
 
 	 
 	    private void moveFile(File file, String targetDirectory) {
+
+			log.info("Inside Move File Function");
 	        try {
 	            Files.createDirectories(Paths.get(targetDirectory));
 	            Path targetPath = Paths.get(targetDirectory, file.getName());
@@ -119,8 +121,9 @@ public class FileLoaderService {
 	    }
 
 
-	private int processPipeSeparatedFile(File file) {
+	private int processFile(File file) {
 		final int CHUNK_SIZE = 500;
+		log.info("Inside process File Method");
 		int totalRecords = 0;
 		List<CallDetailsRecordEntity> chunk = new ArrayList<>(CHUNK_SIZE);
 		List<Future<?>> futures = new ArrayList<>();
@@ -129,14 +132,14 @@ public class FileLoaderService {
 			String line;
 
 			while ((line = br.readLine()) != null) {
-				String[] tokens = line.split("\\|", -1);
-				if (tokens.length < 31) {
-					log.warn("Skipping line, not enough tokens: {}", line);
+				String[] values = line.split("\\|", -1);
+				if (values.length < 31) {
+					log.warn("Skipping line, not enough Values: {}", line);
 					continue;
 				}
 
 				try {
-					CallDetailsRecordEntity record = mapTokensToEntity(tokens);
+					CallDetailsRecordEntity record = mapValuesToEntity(values);
 					chunk.add(record);
 
 					if (chunk.size() >= CHUNK_SIZE) {
@@ -164,45 +167,47 @@ public class FileLoaderService {
 			log.error("Failed to process file {}", file.getName(), e);
 			throw new RuntimeException(e);
 		}
-		return totalRecords; // ← CORRECT
+		return totalRecords;
 	}
 
 
-	private CallDetailsRecordEntity mapTokensToEntity(String[] tokens) {
+	private CallDetailsRecordEntity mapValuesToEntity(String[] values) {
 	        int idx = 0;
+			log.info("Inside mapValuesToEntity Function");
 	        CallDetailsRecordEntity record = new CallDetailsRecordEntity();
-	        record.setRecordDate(parseDateTime(tokens[idx++]));
-	        record.setLSpc(parseInt(tokens[idx++]));
-	        record.setLSsn(parseInt(tokens[idx++]));
-	        record.setLRi(parseInt(tokens[idx++]));
-	        record.setLGtI(parseInt(tokens[idx++]));
-	        record.setLGtDigits(tokens[idx++].trim());
-	        record.setRSpc(parseInt(tokens[idx++]));
-	        record.setRSsn(parseInt(tokens[idx++]));
-	        record.setRRi(parseInt(tokens[idx++]));
-	        record.setRGtI(parseInt(tokens[idx++]));
-	        record.setRGtDigits(tokens[idx++].trim());
-	        record.setServiceCode(tokens[idx++].trim());
-	        record.setOrNature(parseInt(tokens[idx++]));
-	        record.setOrPlan(parseInt(tokens[idx++]));
-	        record.setOrDigits(tokens[idx++].trim());
-	        record.setDeNature(parseInt(tokens[idx++]));
-	        record.setDePlan(parseInt(tokens[idx++]));
-	        record.setDeDigits(tokens[idx++].trim());
-	        record.setIsdnNature(parseInt(tokens[idx++]));
-	        record.setIsdnPlan(parseInt(tokens[idx++]));
-	        record.setMsisdn(tokens[idx++].trim());
-	        record.setVlrNature(parseInt(tokens[idx++]));
-	        record.setVlrPlan(parseInt(tokens[idx++]));
-	        record.setVlrDigits(tokens[idx++].trim());
-	        record.setImsi(tokens[idx++].trim());
-	        record.setStatus(tokens[idx++].trim());
-	        record.setType(tokens[idx++].trim());
-	        record.setTstamp(parseDateTime(tokens[idx++]));
-	        record.setLocalDialogId(parseLong(tokens[idx++]));
-	        record.setRemoteDialogId(parseLong(tokens[idx++]));
-	        record.setDialogDuration(parseLong(tokens[idx++]));
-	        record.setUssdString(tokens[idx++].trim());
+	        record.setRecordDate(parseDateTime(values[idx++]));
+	        record.setLSpc(parseInt(values[idx++]));
+	        record.setLSsn(parseInt(values[idx++]));
+	        record.setLRi(parseInt(values[idx++]));
+	        record.setLGtI(parseInt(values[idx++]));
+
+	        record.setLGtDigits(values[idx++].trim());
+	        record.setRSpc(parseInt(values[idx++]));
+	        record.setRSsn(parseInt(values[idx++]));
+	        record.setRRi(parseInt(values[idx++]));
+	        record.setRGtI(parseInt(values[idx++]));
+	        record.setRGtDigits(values[idx++].trim());
+	        record.setServiceCode(values[idx++].trim());
+	        record.setOrNature(parseInt(values[idx++]));
+	        record.setOrPlan(parseInt(values[idx++]));
+	        record.setOrDigits(values[idx++].trim());
+	        record.setDeNature(parseInt(values[idx++]));
+	        record.setDePlan(parseInt(values[idx++]));
+	        record.setDeDigits(values[idx++].trim());
+	        record.setIsdnNature(parseInt(values[idx++]));
+	        record.setIsdnPlan(parseInt(values[idx++]));
+	        record.setMsisdn(values[idx++].trim());
+	        record.setVlrNature(parseInt(values[idx++]));
+	        record.setVlrPlan(parseInt(values[idx++]));
+			record.setImsi(values[idx++].trim());
+	        record.setVlrDigits(values[idx++].trim());
+	        record.setStatus(values[idx++].trim());
+	        record.setType(values[idx++].trim());
+	        record.setTstamp(parseDateTime(values[idx++]));
+	        record.setLocalDialogId(parseLong(values[idx++]));
+	        record.setRemoteDialogId(parseLong(values[idx++]));
+	        record.setDialogDuration(parseLong(values[idx++]));
+	        record.setUssdString(values[idx++].trim());
 	        return record;
 	    }
 
