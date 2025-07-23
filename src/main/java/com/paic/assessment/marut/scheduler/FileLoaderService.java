@@ -33,7 +33,6 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 
-import static com.paic.assessment.marut.Util.Constants.ERROR_DIR;
 
 @Service
 @Slf4j
@@ -90,7 +89,7 @@ public class FileLoaderService {
         } catch (Exception e) {
             failedCount++;
             log.error("Failed to process file: {}", csvFile.getName(), e);
-            moveFile(csvFile, ERROR_DIR);
+            moveFile(csvFile, Constants.ERROR_DIR);
         } finally {
             logEntry.setUploadEndTime(LocalDateTime.now());
             logEntry.setSuccessfulRecords(successfulCount);
