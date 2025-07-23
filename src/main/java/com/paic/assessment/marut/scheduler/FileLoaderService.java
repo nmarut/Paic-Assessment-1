@@ -1,79 +1,77 @@
 package com.paic.assessment.marut.scheduler;
 
-import com.paic.assessment.marut.Util.Constants;
 import com.paic.assessment.marut.entity.CallDetailsRecordEntity;
 import com.paic.assessment.marut.entity.CdrLogsEntity;
 import com.paic.assessment.marut.repository.CallDetailsRecordsRepository;
 import com.paic.assessment.marut.repository.CdrLogsRepository;
-
+import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
-
-import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
-import java.io.BufferedReader;
-import java.io.File;
-import java.io.FileReader;
-import java.io.IOException;
-
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.nio.file.StandardCopyOption;
-
+import java.io.*;
+import java.nio.file.*;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
-
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-
+import java.util.*;
+import java.util.concurrent.*;
 
 @Service
 @Slf4j
 public class FileLoaderService {
 
     private final CdrLogsRepository cdrLogsRepository;
+    private final CallDetailsRecordsRepository callDetailsRepository;
     private final ExecutorService executor = Executors.newFixedThreadPool(4);
 
-    @Autowired
-    private CallDetailsRecordsRepository callDetailsRepository;
+    @Value("${app.input-dir}")
+    private String inputDir;
 
-    public FileLoaderService(CdrLogsRepository cdrLogsRepository) {
+    @Value("${app.processed-dir}")
+    private String processedDir;
+
+    @Value("${app.error-dir}")
+    private String errorDir;
+
+    @Value("${app.date-format-comma}")
+    private String dateFormatComma;
+
+    @Value("${app.date-format-dot}")
+    private String dateFormatDot;
+
+    private DateTimeFormatter formatterComma;
+    private DateTimeFormatter formatterDot;
+
+    public FileLoaderService(CdrLogsRepository cdrLogsRepository,
+                             CallDetailsRecordsRepository callDetailsRepository) {
         this.cdrLogsRepository = cdrLogsRepository;
+        this.callDetailsRepository = callDetailsRepository;
     }
 
-    public File fetchSingleCsvFile(String directoryPath) {
-        File dir = new File(directoryPath);
-
-        if (dir.exists() && dir.isDirectory()) {
-            File[] files = dir.listFiles(File::isFile);
-
-            if (files != null && files.length > 0) {
-                Arrays.sort(files);
-                return files[0];
-            }
-        }
-        return null;
+    @PostConstruct
+    public void initFormatters() {
+        formatterComma = DateTimeFormatter.ofPattern(dateFormatComma);
+        formatterDot = DateTimeFormatter.ofPattern(dateFormatDot);
     }
 
     @Scheduled(fixedRate = 60000)
     public void processSingleCsvFile() {
-        File csvFile = fetchSingleCsvFile(Constants.INPUT_DIR);
+        File file = fetchSingleCsvFile(inputDir);
         log.info("Inside processSingleCsvFile");
 
-        if (csvFile == null) {
+        if (file == null) {
             log.info("No CSV file found to process.");
             return;
         }
 
+        processAndLogFile(file);
+    }
+
+    private void processAndLogFile(File file) {
         CdrLogsEntity logEntry = new CdrLogsEntity();
-        logEntry.setFileName(csvFile.getName());
+        logEntry.setFileName(file.getName());
         logEntry.setUploadStartTime(LocalDateTime.now());
         logEntry.setSuccessfulRecords(0);
         logEntry.setFailedRecords(0);
@@ -83,13 +81,13 @@ public class FileLoaderService {
         int failedCount = 0;
 
         try {
-            successfulCount = processFile(csvFile);
-            moveFile(csvFile, Constants.PROCESSED_DIR);
-            log.info("Processed and moved file: {}", csvFile.getName());
+            successfulCount = processFile(file);
+            moveFile(file, processedDir);
+            log.info("Processed and moved file: {}", file.getName());
         } catch (Exception e) {
             failedCount++;
-            log.error("Failed to process file: {}", csvFile.getName(), e);
-            moveFile(csvFile, Constants.ERROR_DIR);
+            log.error("Failed to process file: {}", file.getName(), e);
+            moveFile(file, errorDir);
         } finally {
             logEntry.setUploadEndTime(LocalDateTime.now());
             logEntry.setSuccessfulRecords(successfulCount);
@@ -98,9 +96,19 @@ public class FileLoaderService {
         }
     }
 
-    private void moveFile(File file, String targetDirectory) {
-        log.info("Inside moveFile");
+    private File fetchSingleCsvFile(String directoryPath) {
+        File dir = new File(directoryPath);
+        if (dir.exists() && dir.isDirectory()) {
+            File[] files = dir.listFiles(File::isFile);
+            if (files != null && files.length > 0) {
+                Arrays.sort(files);
+                return files[0];
+            }
+        }
+        return null;
+    }
 
+    private void moveFile(File file, String targetDirectory) {
         try {
             Files.createDirectories(Paths.get(targetDirectory));
             Path targetPath = Paths.get(targetDirectory, file.getName());
@@ -112,8 +120,6 @@ public class FileLoaderService {
 
     private int processFile(File file) {
         final int CHUNK_SIZE = 500;
-        log.info("Inside processFile");
-
         int totalRecords = 0;
         List<CallDetailsRecordEntity> chunk = new ArrayList<>(CHUNK_SIZE);
         List<Future<?>> futures = new ArrayList<>();
@@ -163,9 +169,8 @@ public class FileLoaderService {
 
     private CallDetailsRecordEntity mapValuesToEntity(String[] values) {
         int idx = 0;
-        log.info("Inside mapValuesToEntity");
-
         CallDetailsRecordEntity record = new CallDetailsRecordEntity();
+
         record.setRecordDate(parseDateTime(values[idx++]));
         record.setLSpc(parseInt(values[idx++]));
         record.setLSsn(parseInt(values[idx++]));
@@ -202,6 +207,21 @@ public class FileLoaderService {
         return record;
     }
 
+    private LocalDateTime parseDateTime(String val) {
+        if (val == null || val.trim().isEmpty()) {
+            throw new IllegalArgumentException("Missing DateTime value!");
+        }
+
+        String trimmed = val.trim();
+        try {
+            return trimmed.contains(",")
+                    ? LocalDateTime.parse(trimmed, formatterComma)
+                    : LocalDateTime.parse(trimmed, formatterDot);
+        } catch (DateTimeParseException e) {
+            throw new IllegalArgumentException("Invalid DateTime format: " + trimmed);
+        }
+    }
+
     private Integer parseInt(String val) {
         try {
             return (val == null || val.trim().isEmpty()) ? 0 : Integer.parseInt(val.trim());
@@ -215,24 +235,6 @@ public class FileLoaderService {
             return (val == null || val.trim().isEmpty()) ? 0L : Long.parseLong(val.trim());
         } catch (NumberFormatException e) {
             return 0L;
-        }
-    }
-
-    private final DateTimeFormatter formatterComma = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss,SSS");
-    private final DateTimeFormatter formatterDot = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSS");
-
-    private LocalDateTime parseDateTime(String val) {
-        if (val == null || val.trim().isEmpty()) {
-            throw new IllegalArgumentException("Missing DateTime value!");
-        }
-
-        String trimmed = val.trim();
-        try {
-            return trimmed.contains(",")
-                    ? LocalDateTime.parse(trimmed, formatterComma)
-                    : LocalDateTime.parse(trimmed, formatterDot);
-        } catch (DateTimeParseException e) {
-            throw new IllegalArgumentException("Invalid DateTime format: " + trimmed);
         }
     }
 }
