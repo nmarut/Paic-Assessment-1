@@ -1,16 +1,31 @@
 package com.paic.assessment.marut.scheduler;
 
+import com.paic.assessment.marut.Util.Constants;
+import com.paic.assessment.marut.entity.CallDetailsRecordEntity;
+import com.paic.assessment.marut.entity.CdrLogsEntity;
+import com.paic.assessment.marut.repository.CallDetailsRecordsRepository;
+import com.paic.assessment.marut.repository.CdrLogsRepository;
+
+import lombok.extern.slf4j.Slf4j;
+
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.stereotype.Service;
+
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileReader;
 import java.io.IOException;
+
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
+
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
+
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -18,15 +33,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 
-import com.paic.assessment.marut.entity.CallDetailsRecordEntity;
-import com.paic.assessment.marut.entity.CdrLogsEntity;
-import com.paic.assessment.marut.repository.CallDetailsRecordsRepository;
-import com.paic.assessment.marut.repository.CdrLogsRepository;
-
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.scheduling.annotation.Scheduled;
-import org.springframework.stereotype.Service;
+import static com.paic.assessment.marut.Util.Constants.ERROR_DIR;
 
 @Service
 @Slf4j
@@ -35,10 +42,6 @@ public class FileLoaderService {
     private final CdrLogsRepository cdrLogsRepository;
     private final ExecutorService executor = Executors.newFixedThreadPool(4);
 
-    private static final String INPUT_DIR = "C:\\files\\input";
-    private static final String PROCESSED_DIR = "C:\\files\\processed";
-    private static final String ERROR_DIR = "C:\\files\\error";
-
     @Autowired
     private CallDetailsRecordsRepository callDetailsRepository;
 
@@ -46,7 +49,6 @@ public class FileLoaderService {
         this.cdrLogsRepository = cdrLogsRepository;
     }
 
-    // @Scheduled(fixedRate = 10000)
     public File fetchSingleCsvFile(String directoryPath) {
         File dir = new File(directoryPath);
 
@@ -63,11 +65,11 @@ public class FileLoaderService {
 
     @Scheduled(fixedRate = 60000)
     public void processSingleCsvFile() {
-        File csvFile = fetchSingleCsvFile(INPUT_DIR);
+        File csvFile = fetchSingleCsvFile(Constants.INPUT_DIR);
         log.info("Inside processSingleCsvFile");
 
         if (csvFile == null) {
-            System.out.println("No CSV file found to process.");
+            log.info("No CSV file found to process.");
             return;
         }
 
@@ -83,13 +85,12 @@ public class FileLoaderService {
 
         try {
             successfulCount = processFile(csvFile);
-            moveFile(csvFile, PROCESSED_DIR);
-            System.out.println("Processed and moved file: " + csvFile.getName());
+            moveFile(csvFile, Constants.PROCESSED_DIR);
+            log.info("Processed and moved file: {}", csvFile.getName());
         } catch (Exception e) {
             failedCount++;
-            e.printStackTrace();
+            log.error("Failed to process file: {}", csvFile.getName(), e);
             moveFile(csvFile, ERROR_DIR);
-            System.err.println("Failed to process file. Moved to error: " + csvFile.getName());
         } finally {
             logEntry.setUploadEndTime(LocalDateTime.now());
             logEntry.setSuccessfulRecords(successfulCount);
@@ -100,12 +101,13 @@ public class FileLoaderService {
 
     private void moveFile(File file, String targetDirectory) {
         log.info("Inside moveFile");
+
         try {
             Files.createDirectories(Paths.get(targetDirectory));
             Path targetPath = Paths.get(targetDirectory, file.getName());
             Files.move(file.toPath(), targetPath, StandardCopyOption.REPLACE_EXISTING);
         } catch (IOException e) {
-            System.err.println("Error moving file: " + e.getMessage());
+            log.error("Error moving file: {}", e.getMessage(), e);
         }
     }
 
@@ -197,6 +199,7 @@ public class FileLoaderService {
         record.setRemoteDialogId(parseLong(values[idx++]));
         record.setDialogDuration(parseLong(values[idx++]));
         record.setUssdString(values[idx++].trim());
+
         return record;
     }
 
@@ -227,8 +230,8 @@ public class FileLoaderService {
         String trimmed = val.trim();
         try {
             return trimmed.contains(",")
-                ? LocalDateTime.parse(trimmed, formatterComma)
-                : LocalDateTime.parse(trimmed, formatterDot);
+                    ? LocalDateTime.parse(trimmed, formatterComma)
+                    : LocalDateTime.parse(trimmed, formatterDot);
         } catch (DateTimeParseException e) {
             throw new IllegalArgumentException("Invalid DateTime format: " + trimmed);
         }
